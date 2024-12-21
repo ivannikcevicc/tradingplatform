@@ -2,6 +2,7 @@ import { MarketData, TradingParameters, TradingSignal } from "@/types/trading";
 import { calculateEMA } from "../indicators/ema";
 import { calculateRSI } from "../indicators/rsi";
 import { calculateSMA } from "../indicators/sma";
+import { calculateProbability } from "./probability";
 
 // src/lib/strategy/index.ts
 export class TradingStrategy {
@@ -53,10 +54,8 @@ export class TradingStrategy {
     index: number,
     type: "BUY" | "SELL"
   ): number {
-    // Implement probability calculation based on historical patterns
-    return 0.75; // Placeholder
+    return calculateProbability(data, index, type);
   }
-
   private calculateRisk(data: MarketData[], index: number): number {
     const atr = this.calculateATR(
       data.slice(Math.max(0, index - 14), index + 1)

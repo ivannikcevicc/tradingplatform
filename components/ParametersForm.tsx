@@ -1,4 +1,7 @@
 // src/components/ParametersForm.tsx
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { TradingParameters } from "@/types/trading";
 
 interface ParametersFormProps {
@@ -7,32 +10,42 @@ interface ParametersFormProps {
 }
 
 export function ParametersForm({ parameters, onChange }: ParametersFormProps) {
-  return (
-    <div className="bg-white p-4 rounded-lg shadow">
-      <h2 className="text-lg font-semibold mb-4">Trading Parameters</h2>
+  const handleChange = (key: keyof TradingParameters, value: string) => {
+    const numValue = value === "" ? 0 : Number(value);
+    onChange({
+      ...parameters,
+      [key]: numValue,
+    });
+  };
 
-      <div className="space-y-4">
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Trading Parameters</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
         {Object.entries(parameters).map(([key, value]) => (
-          <div key={key} className="flex flex-col">
-            <label className="text-sm text-gray-600">
+          <div key={key} className="space-y-2">
+            <Label htmlFor={key}>
               {key
                 .replace(/([A-Z])/g, " $1")
                 .replace(/^./, (str) => str.toUpperCase())}
-            </label>
-            <input
+            </Label>
+            <Input
+              id={key}
               type="number"
-              value={value}
+              value={value || ""}
               onChange={(e) =>
-                onChange({
-                  ...parameters,
-                  [key]: parseFloat(e.target.value),
-                })
+                handleChange(key as keyof TradingParameters, e.target.value)
               }
-              className="mt-1 px-3 py-2 border rounded"
+              min={0}
+              step={
+                key === "bollingerMult" || key === "riskPercentage" ? 0.1 : 1
+              }
             />
           </div>
         ))}
-      </div>
-    </div>
+      </CardContent>
+    </Card>
   );
 }
