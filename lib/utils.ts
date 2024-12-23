@@ -16,13 +16,21 @@ export async function fetchWithRetry(
 ): Promise<Response> {
   const { retries = 3, retryDelay = 1000, ...fetchOptions } = options;
 
+  let lastError: Error | null = null;
+
   for (let i = 0; i < retries; i++) {
     try {
-      const response = await fetch(url, fetchOptions);
+      const response = await fetch(url, {
+        ...fetchOptions,
+        // Add cache control to prevent CloudFront caching
+        cache: "no-store",
+      });
+
+      // Successfully got a response
       if (response.ok) return response;
 
+      // Handle rate limiting
       if (response.status === 429) {
-        // Rate limit
         const retryAfter = response.headers.get("Retry-After");
         await new Promise((resolve) =>
           setTimeout(
@@ -33,17 +41,20 @@ export async function fetchWithRetry(
         continue;
       }
 
+      // Handle server errors
       if (response.status >= 500) {
         await new Promise((resolve) => setTimeout(resolve, retryDelay));
         continue;
       }
 
+      // If we get here, it's a non-recoverable error
       return response;
     } catch (error) {
-      if (i === retries - 1) throw error;
+      lastError = error instanceof Error ? error : new Error("Unknown error");
+      if (i === retries - 1) throw lastError;
       await new Promise((resolve) => setTimeout(resolve, retryDelay));
     }
   }
 
-  throw new Error("Max retries reached");
+  throw lastError || new Error("Max retries reached");
 }
