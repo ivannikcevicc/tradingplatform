@@ -1,11 +1,10 @@
 import { fetchWithRetry } from "@/lib/utils";
 import { NextResponse } from "next/server";
 
-// Use testnet API instead
-const BINANCE_API = "https://testnet.binance.vision/api/v3";
+const BINANCE_API = "https://api.binance.com/api/v3";
 
-export const runtime = "edge";
-export const dynamic = "force-dynamic";
+export const runtime = "edge"; // Add edge runtime
+export const dynamic = "force-dynamic"; // Disable caching
 
 export async function GET(req: Request) {
   try {
@@ -13,21 +12,16 @@ export async function GET(req: Request) {
     const symbol = searchParams.get("symbol") || "BTCUSDT";
     const interval = searchParams.get("interval") || "1h";
 
+    // Add headers to prevent rate limiting
     const response = await fetchWithRetry(
       `${BINANCE_API}/klines?symbol=${symbol}&interval=${interval}&limit=1000`,
       {
         headers: {
           Accept: "application/json",
+          "Content-Type": "application/json",
           "User-Agent":
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
-          "Accept-Encoding": "gzip, deflate, br",
-          "Accept-Language": "en-US,en;q=0.9",
-          "Cache-Control": "no-cache",
-          Connection: "keep-alive",
-          Origin: process.env.VERCEL_URL || "http://localhost:3000",
-          Referer: process.env.VERCEL_URL || "http://localhost:3000",
+            "Mozilla/5.0 (compatible; BinanceAPI/1.0; https://tradingplatform-liard.vercel.app)",
         },
-        cache: "no-store",
         retries: 3,
         retryDelay: 1000,
       }
@@ -36,18 +30,6 @@ export async function GET(req: Request) {
     if (!response.ok) {
       const errorData = await response.text();
       console.error("Binance API Error:", errorData);
-
-      // If we get a 403, try the fallback data
-      if (response.status === 403) {
-        return NextResponse.json(getFallbackData(), {
-          status: 200,
-          headers: {
-            "Content-Type": "application/json",
-            "Cache-Control": "no-store, max-age=0",
-          },
-        });
-      }
-
       return NextResponse.json(
         { error: `Binance API error: ${response.status}` },
         { status: response.status }
@@ -56,11 +38,16 @@ export async function GET(req: Request) {
 
     const data = await response.json();
 
+    // Validate data structure
     if (!Array.isArray(data)) {
       console.error("Invalid data structure received:", data);
-      return NextResponse.json(getFallbackData(), { status: 200 });
+      return NextResponse.json(
+        { error: "Invalid data received from Binance" },
+        { status: 500 }
+      );
     }
 
+    // Transform Binance data to our format with validation
     const formattedData = data.map((d: any[]) => {
       if (!Array.isArray(d) || d.length < 6) {
         throw new Error("Invalid kline data structure");
@@ -85,31 +72,12 @@ export async function GET(req: Request) {
     });
   } catch (error) {
     console.error("Market data error:", error);
-    // Return fallback data on error
-    return NextResponse.json(getFallbackData(), { status: 200 });
+    return NextResponse.json(
+      {
+        error: "Failed to fetch market data",
+        details: error instanceof Error ? error.message : "Unknown error",
+      },
+      { status: 500 }
+    );
   }
-}
-
-// Fallback data function to provide sample data when API fails
-function getFallbackData() {
-  const now = Date.now();
-  const hourInMs = 3600000;
-  const data = [];
-
-  // Generate 24 hours of sample data
-  for (let i = 24; i >= 0; i--) {
-    const timestamp = now - i * hourInMs;
-    const basePrice = 45000 + (Math.random() * 1000 - 500);
-
-    data.push({
-      timestamp,
-      open: basePrice,
-      high: basePrice * (1 + Math.random() * 0.02),
-      low: basePrice * (1 - Math.random() * 0.02),
-      close: basePrice * (1 + (Math.random() * 0.04 - 0.02)),
-      volume: 100 + Math.random() * 900,
-    });
-  }
-
-  return data;
 }
