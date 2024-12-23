@@ -9,6 +9,7 @@ import { SignalsList } from "@/components/SignalsList";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Card, CardContent } from "@/components/ui/card";
 import { useWebSocket } from "@/lib/hooks/websocket";
+import { useAlpacaWebSocket } from "@/lib/websocket";
 
 const Chart = dynamic(() => import("@/components/Chart"), { ssr: false });
 
@@ -32,55 +33,37 @@ export default function TradingDashboard() {
   const [signals, setSignals] = useState<TradingSignal[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  // Handle WebSocket messages
-  const handleWebSocketMessage = useCallback((event: MessageEvent) => {
-    try {
-      const data = JSON.parse(event.data);
-      if (!data.k) return; // Ensure we have kline data
+  const handleWebSocketMessage = useCallback((newData: MarketData) => {
+    setMarketData((current) => {
+      const updated = [...current];
+      const lastIndex = updated.length - 1;
 
-      const newData: MarketData = {
-        timestamp: data.k.t,
-        open: parseFloat(data.k.o),
-        high: parseFloat(data.k.h),
-        low: parseFloat(data.k.l),
-        close: parseFloat(data.k.c),
-        volume: parseFloat(data.k.v),
-      };
-
-      setMarketData((current) => {
-        const updated = [...current];
-        const lastIndex = updated.length - 1;
-
-        if (
-          lastIndex >= 0 &&
-          updated[lastIndex].timestamp === newData.timestamp
-        ) {
-          updated[lastIndex] = newData;
-        } else {
-          // Keep only the last 1000 data points
-          if (updated.length >= 1000) {
-            updated.shift();
-          }
-          updated.push(newData);
+      if (
+        lastIndex >= 0 &&
+        updated[lastIndex].timestamp === newData.timestamp
+      ) {
+        updated[lastIndex] = newData;
+      } else {
+        if (updated.length >= 1000) {
+          updated.shift();
         }
-        return updated;
-      });
-    } catch (error) {
-      console.error("Error processing websocket message:", error);
-    }
+        updated.push(newData);
+      }
+      return updated;
+    });
   }, []);
 
-  const { isConnected, error } = useWebSocket(
-    "wss://stream.binance.com:9443/ws/btcusdt@kline_1m",
+  const { isConnected } = useAlpacaWebSocket(
+    ["AAPL"], // Symbols to subscribe
     handleWebSocketMessage
   );
 
-  // Fetch initial historical data
   useEffect(() => {
     const fetchHistoricalData = async () => {
       try {
         setIsLoading(true);
         const response = await fetch("/api/market-data");
+        if (!response.ok) throw new Error("Failed to fetch historical data");
         const data = await response.json();
         setMarketData(data);
       } catch (error) {
@@ -93,7 +76,6 @@ export default function TradingDashboard() {
     fetchHistoricalData();
   }, []);
 
-  // Update signals when market data or parameters change
   useEffect(() => {
     if (marketData.length > 0) {
       const strategy = new TradingStrategy(parameters);
@@ -114,7 +96,6 @@ export default function TradingDashboard() {
           </Alert>
         )}
       </header>
-
       <main className="flex-grow grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2">
           <Card>

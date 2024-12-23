@@ -1,58 +1,81 @@
-// lib/hooks/websocket.ts
 import { useEffect, useRef, useState } from "react";
+import { MarketData } from "@/types/trading";
 
-export function useWebSocket(onMessage: (data: any) => void) {
+const ALPACA_WS_URL = "wss://stream.data.alpaca.markets/v2/sip";
+const ALPACA_API_KEY = process.env.NEXT_PUBLIC_ALPACA_API_KEY_ID;
+const ALPACA_SECRET_KEY = process.env.NEXT_PUBLIC_ALPACA_SECRET_KEY;
+
+export function useAlpacaWebSocket(
+  symbols: string[],
+  onMessage: (data: MarketData) => void
+) {
+  const wsRef = useRef<WebSocket | null>(null);
   const [isConnected, setIsConnected] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const ws = useRef<WebSocket | null>(null);
 
   useEffect(() => {
-    // Using testnet WebSocket endpoint
-    const socket = new WebSocket(
-      "wss://testnet.binance.vision/ws/btcusdt@kline_1m"
-    );
+    const connect = () => {
+      wsRef.current = new WebSocket(ALPACA_WS_URL);
 
-    socket.onopen = () => {
-      setIsConnected(true);
-      setError(null);
-    };
+      wsRef.current.onopen = () => {
+        console.log("Connected to Alpaca WebSocket");
+        setIsConnected(true);
 
-    socket.onmessage = (event) => {
-      try {
+        // Authenticate
+        wsRef.current?.send(
+          JSON.stringify({
+            action: "auth",
+            key: ALPACA_API_KEY,
+            secret: ALPACA_SECRET_KEY,
+          })
+        );
+
+        // Subscribe to stock data
+        wsRef.current?.send(
+          JSON.stringify({
+            action: "subscribe",
+            trades: symbols,
+            bars: symbols,
+          })
+        );
+      };
+
+      wsRef.current.onmessage = (event) => {
         const data = JSON.parse(event.data);
-        onMessage(data);
-      } catch (err) {
-        console.error("WebSocket message error:", err);
-      }
-    };
-
-    socket.onerror = (event) => {
-      setError("WebSocket error occurred");
-      console.error("WebSocket error:", event);
-    };
-
-    socket.onclose = () => {
-      setIsConnected(false);
-      setError("WebSocket disconnected");
-
-      // Attempt to reconnect after 5 seconds
-      setTimeout(() => {
-        if (ws.current?.readyState === WebSocket.CLOSED) {
-          ws.current = new WebSocket(
-            "wss://testnet.binance.vision/ws/btcusdt@kline_1m"
-          );
+        // Process market data
+        if (data && data.bars) {
+          data.bars.forEach((bar: any) => {
+            onMessage({
+              timestamp: new Date(bar.t).getTime(),
+              open: bar.o,
+              high: bar.h,
+              low: bar.l,
+              close: bar.c,
+              volume: bar.v,
+            });
+          });
         }
-      }, 5000);
+      };
+
+      wsRef.current.onclose = () => {
+        console.log("WebSocket closed, reconnecting...");
+        setIsConnected(false);
+        setTimeout(connect, 1000);
+      };
+
+      wsRef.current.onerror = (error) => {
+        console.error("WebSocket error:", error);
+        setIsConnected(false);
+        wsRef.current?.close();
+      };
     };
 
-    ws.current = socket;
+    connect();
 
     return () => {
-      if (ws.current?.readyState === WebSocket.OPEN) {
-        ws.current.close();
-      }
+      wsRef.current?.close();
+      setIsConnected(false);
     };
-  }, [onMessage]);
+  }, [symbols, onMessage]);
 
-  return { isConnected, error };
+  return { isConnected };
 }
