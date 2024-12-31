@@ -51,7 +51,7 @@ export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
     const symbol = (searchParams.get("symbol") || "BTCUSDT").toUpperCase();
-    const interval = searchParams.get("interval") || "1m";
+    const interval = searchParams.get("interval") || "1h";
 
     const data = await getBinanceHistoricalData(symbol, interval);
     return NextResponse.json(data, {

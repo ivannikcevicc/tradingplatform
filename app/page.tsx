@@ -62,7 +62,7 @@ export default function TradingDashboard() {
         setIsLoading(true);
         setError(null);
         const response = await fetch(
-          `/api/market-data?symbol=${symbol}&interval=1m`
+          `/api/market-data?symbol=${symbol}&interval=1h`
         );
         if (!response.ok) throw new Error("Failed to fetch historical data");
         const data = await response.json();
