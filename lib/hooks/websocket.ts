@@ -1,71 +1,68 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
+import { MarketData } from "@/types/trading";
 
-interface WebSocketHook {
-  isConnected: boolean;
-  error: Error | null;
-  sendMessage: (message: string) => void;
-}
+const BINANCE_WS_URL = "wss://data-stream.binance.vision:443/ws";
 
-export const useWebSocket = (
-  url: string,
-  onMessage: (event: MessageEvent) => void,
-  reconnectInterval: number = 5000
-): WebSocketHook => {
-  // Explicitly initialize state values
-  const [isConnected, setIsConnected] = useState<boolean>(false);
-  const [error, setError] = useState<Error | null>(null);
+export function useBinanceWebSocket(
+  symbol: string,
+  onMessage: (data: MarketData) => void
+) {
   const wsRef = useRef<WebSocket | null>(null);
-  const reconnectTimeoutRef = useRef<NodeJS.Timeout | undefined>(undefined);
-
-  const connect = useCallback(() => {
-    try {
-      const ws = new WebSocket(url);
-      wsRef.current = ws;
-
-      ws.onopen = () => {
-        setIsConnected(true);
-        setError(null);
-      };
-
-      ws.onclose = () => {
-        setIsConnected(false);
-        // Attempt to reconnect
-        reconnectTimeoutRef.current = setTimeout(connect, reconnectInterval);
-      };
-
-      ws.onerror = () => {
-        setError(new Error("WebSocket error occurred"));
-        ws.close();
-      };
-
-      ws.onmessage = onMessage;
-    } catch (err) {
-      setError(
-        err instanceof Error ? err : new Error("Failed to connect to WebSocket")
-      );
-    }
-  }, [url, onMessage, reconnectInterval]);
-
-  const sendMessage = useCallback((message: string) => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
-      wsRef.current.send(message);
-    } else {
-      setError(new Error("WebSocket is not connected"));
-    }
-  }, []);
+  const [isConnected, setIsConnected] = useState(true); // Default to true to avoid flash
+  const prevSymbolRef = useRef(symbol);
 
   useEffect(() => {
-    connect();
-
-    return () => {
-      if (wsRef.current) {
-        wsRef.current.close();
+    if (prevSymbolRef.current !== symbol) {
+      if (wsRef.current?.readyState === WebSocket.OPEN) {
+        const unsubMessage = {
+          method: "UNSUBSCRIBE",
+          params: [`${prevSymbolRef.current.toLowerCase()}@kline_1m`],
+          id: 1,
+        };
+        wsRef.current.send(JSON.stringify(unsubMessage));
       }
-      if (reconnectTimeoutRef.current) {
-        clearTimeout(reconnectTimeoutRef.current);
+      prevSymbolRef.current = symbol;
+    }
+
+    const ws = new WebSocket(BINANCE_WS_URL);
+    wsRef.current = ws;
+
+    ws.onopen = () => {
+      const subMessage = {
+        method: "SUBSCRIBE",
+        params: [`${symbol.toLowerCase()}@kline_1m`],
+        id: 1,
+      };
+      ws.send(JSON.stringify(subMessage));
+    };
+
+    ws.onmessage = (event) => {
+      const data = JSON.parse(event.data);
+      if (data.k) {
+        const kline = data.k;
+        onMessage({
+          timestamp: kline.t,
+          open: parseFloat(kline.o),
+          high: parseFloat(kline.h),
+          low: parseFloat(kline.l),
+          close: parseFloat(kline.c),
+          volume: parseFloat(kline.v),
+        });
       }
     };
-  }, [connect]);
 
-  return { isConnected, error, sendMessage };
-};
+    ws.onerror = () => {
+      setIsConnected(false);
+    };
+
+    ws.onclose = () => {
+      setIsConnected(false);
+    };
+
+    return () => {
+      ws.close();
+    };
+  }, [symbol, onMessage]);
+
+  return { isConnected };
+}

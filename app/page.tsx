@@ -8,8 +8,7 @@ import { ParametersForm } from "@/components/ParametersForm";
 import { SignalsList } from "@/components/SignalsList";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Card, CardContent } from "@/components/ui/card";
-import { useWebSocket } from "@/lib/hooks/websocket";
-import { useAlpacaWebSocket } from "@/lib/websocket";
+import { useBinanceWebSocket } from "@/lib/hooks/websocket";
 
 const Chart = dynamic(() => import("@/components/Chart"), { ssr: false });
 
@@ -27,46 +26,50 @@ const DEFAULT_PARAMETERS: TradingParameters = {
 };
 
 export default function TradingDashboard() {
+  const [symbol, setSymbol] = useState("BTCUSDT");
   const [parameters, setParameters] =
     useState<TradingParameters>(DEFAULT_PARAMETERS);
   const [marketData, setMarketData] = useState<MarketData[]>([]);
   const [signals, setSignals] = useState<TradingSignal[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   const handleWebSocketMessage = useCallback((newData: MarketData) => {
     setMarketData((current) => {
       const updated = [...current];
-      const lastIndex = updated.length - 1;
+      const existingIndex = updated.findIndex(
+        (d) => d.timestamp === newData.timestamp
+      );
 
-      if (
-        lastIndex >= 0 &&
-        updated[lastIndex].timestamp === newData.timestamp
-      ) {
-        updated[lastIndex] = newData;
+      if (existingIndex >= 0) {
+        updated[existingIndex] = newData;
       } else {
-        if (updated.length >= 1000) {
+        updated.push(newData);
+        updated.sort((a, b) => a.timestamp - b.timestamp);
+        if (updated.length > 1000) {
           updated.shift();
         }
-        updated.push(newData);
       }
       return updated;
     });
   }, []);
 
-  const { isConnected } = useAlpacaWebSocket(
-    ["AAPL"], // Symbols to subscribe
-    handleWebSocketMessage
-  );
+  const { isConnected } = useBinanceWebSocket(symbol, handleWebSocketMessage);
 
   useEffect(() => {
     const fetchHistoricalData = async () => {
       try {
         setIsLoading(true);
-        const response = await fetch("/api/market-data");
+        setError(null);
+        const response = await fetch(
+          `/api/market-data?symbol=${symbol}&interval=1m`
+        );
         if (!response.ok) throw new Error("Failed to fetch historical data");
         const data = await response.json();
+        if (data.error) throw new Error(data.error);
         setMarketData(data);
-      } catch (error) {
+      } catch (error: any) {
+        setError(error.message);
         console.error("Error fetching historical data:", error);
       } finally {
         setIsLoading(false);
@@ -74,16 +77,9 @@ export default function TradingDashboard() {
     };
 
     fetchHistoricalData();
-  }, []);
+  }, [symbol]);
 
-  useEffect(() => {
-    if (marketData.length > 0) {
-      const strategy = new TradingStrategy(parameters);
-      const newSignals = strategy.analyze(marketData);
-      setSignals(newSignals);
-    }
-  }, [marketData, parameters]);
-
+  // Rest of the component remains the same...
   return (
     <div className="flex flex-col min-h-screen p-4 bg-gray-50 dark:bg-gray-900">
       <header className="mb-6">
@@ -95,11 +91,25 @@ export default function TradingDashboard() {
             </AlertDescription>
           </Alert>
         )}
+        {error && (
+          <Alert variant="destructive">
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        )}
       </header>
       <main className="flex-grow grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2">
           <Card>
             <CardContent className="p-4">
+              <select
+                value={symbol}
+                onChange={(e) => setSymbol(e.target.value)}
+                className="mb-4 p-2 border rounded"
+              >
+                <option value="BTCUSDT">BTC/USDT</option>
+                <option value="ETHUSDT">ETH/USDT</option>
+                <option value="BNBUSDT">BNB/USDT</option>
+              </select>
               {isLoading ? (
                 <div className="h-[400px] flex items-center justify-center">
                   <p>Loading chart data...</p>
