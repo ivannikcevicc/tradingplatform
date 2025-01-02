@@ -5,6 +5,7 @@ export interface MarketData {
   low: number;
   close: number;
   volume: number;
+  isCurrentPeriod?: boolean;
 }
 
 export interface ChartState {

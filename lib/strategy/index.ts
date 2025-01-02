@@ -1,77 +1,79 @@
 import { MarketData, TradingParameters, TradingSignal } from "@/types/trading";
-import { calculateEMA } from "../indicators/ema";
-import { calculateRSI } from "../indicators/rsi";
-import { calculateSMA } from "../indicators/sma";
-import { calculateProbability } from "./probability";
 
-// src/lib/strategy/index.ts
+// trading-strategy.ts
 export class TradingStrategy {
-  private parameters: TradingParameters;
-
-  constructor(parameters: TradingParameters) {
-    this.parameters = parameters;
-  }
-
-  public analyze(marketData: MarketData[]): TradingSignal[] {
-    const closes = marketData.map((d) => d.close);
+  generateSignals(
+    data: MarketData[],
+    params: TradingParameters
+  ): TradingSignal[] {
     const signals: TradingSignal[] = [];
+    const sma = this.calculateSMA(data, params.smaLength);
+    const rsi = this.calculateRSI(data, params.rsiLength);
 
-    // Calculate indicators
-    const sma = calculateSMA(closes, this.parameters.smaLength);
-    const ema = calculateEMA(closes, this.parameters.emaLength);
-    const rsi = calculateRSI(closes, this.parameters.rsiLength);
+    for (let i = params.smaLength; i < data.length; i++) {
+      const price = data[i].close;
+      const smaValue = sma[i];
+      const rsiValue = rsi[i];
 
-    // Generate signals
-    for (let i = this.parameters.smaLength; i < closes.length; i++) {
-      // Bullish condition
-      if (closes[i] > sma[i] && rsi[i] < 70 && closes[i] > ema[i]) {
+      if (rsiValue < 30 && price > smaValue) {
         signals.push({
-          timestamp: marketData[i].timestamp,
+          timestamp: data[i].timestamp,
           type: "BUY",
-          price: closes[i],
-          probability: this.calculateProbability(marketData, i, "BUY"),
-          risk: this.calculateRisk(marketData, i),
+          price: price,
+          probability: 70 + (30 - rsiValue),
+          risk: price * (params.riskPercentage / 100),
         });
-      }
-
-      // Bearish condition
-      if (closes[i] < sma[i] && rsi[i] > 30 && closes[i] < ema[i]) {
+      } else if (rsiValue > 70 && price < smaValue) {
         signals.push({
-          timestamp: marketData[i].timestamp,
+          timestamp: data[i].timestamp,
           type: "SELL",
-          price: closes[i],
-          probability: this.calculateProbability(marketData, i, "SELL"),
-          risk: this.calculateRisk(marketData, i),
+          price: price,
+          probability: 70 + (rsiValue - 70),
+          risk: price * (params.riskPercentage / 100),
         });
       }
     }
-
     return signals;
   }
 
-  private calculateProbability(
-    data: MarketData[],
-    index: number,
-    type: "BUY" | "SELL"
-  ): number {
-    return calculateProbability(data, index, type);
-  }
-  private calculateRisk(data: MarketData[], index: number): number {
-    const atr = this.calculateATR(
-      data.slice(Math.max(0, index - 14), index + 1)
-    );
-    return atr * this.parameters.riskPercentage;
+  private calculateSMA(data: MarketData[], length: number): number[] {
+    const sma = new Array(data.length).fill(0);
+    for (let i = length - 1; i < data.length; i++) {
+      const sum = data
+        .slice(i - length + 1, i + 1)
+        .reduce((acc, val) => acc + val.close, 0);
+      sma[i] = sum / length;
+    }
+    return sma;
   }
 
-  private calculateATR(data: MarketData[]): number {
-    // Simple ATR calculation
-    const ranges = data.map((d) =>
-      Math.max(
-        d.high - d.low,
-        Math.abs(d.high - d.close),
-        Math.abs(d.low - d.close)
-      )
-    );
-    return ranges.reduce((a, b) => a + b, 0) / ranges.length;
+  private calculateRSI(data: MarketData[], length: number): number[] {
+    const rsi = new Array(data.length).fill(0);
+    let gains = 0;
+    let losses = 0;
+
+    for (let i = 1; i < data.length; i++) {
+      const change = data[i].close - data[i - 1].close;
+      if (change >= 0) {
+        gains += change;
+      } else {
+        losses -= change;
+      }
+
+      if (i >= length) {
+        const avgGain = gains / length;
+        const avgLoss = losses / length;
+        const rs = avgGain / avgLoss;
+        rsi[i] = 100 - 100 / (1 + rs);
+
+        const oldChange = data[i - length + 1].close - data[i - length].close;
+        if (oldChange >= 0) {
+          gains -= oldChange;
+        } else {
+          losses += oldChange;
+        }
+      }
+    }
+    return rsi;
   }
 }

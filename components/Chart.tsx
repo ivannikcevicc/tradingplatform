@@ -19,7 +19,6 @@ export default function Chart({ data, signals }: ChartProps) {
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
-  const lastDataRef = useRef<string>("");
 
   const initChart = useCallback(() => {
     if (!chartContainerRef.current || chartRef.current) return;
@@ -85,7 +84,7 @@ export default function Chart({ data, signals }: ChartProps) {
   useEffect(() => {
     if (!seriesRef.current || !data.length) return;
 
-    const chartData: CandlestickData[] = data.map((d) => ({
+    const chartData: CandlestickData<Time>[] = data.map((d) => ({
       time: (d.timestamp / 1000) as Time,
       open: d.open,
       high: d.high,
@@ -104,7 +103,6 @@ export default function Chart({ data, signals }: ChartProps) {
 
     seriesRef.current.setData(chartData);
     seriesRef.current.setMarkers(markers);
-    lastDataRef.current = JSON.stringify(data);
   }, [data, signals]);
 
   return <div ref={chartContainerRef} className="h-[500px] w-full" />;
